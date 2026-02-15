@@ -984,6 +984,8 @@ import uvicorn
 # Import shared database
 from shared_database import SharedDatabase
 
+from webhook_dispatcher import WebhookDispatcher
+
 load_dotenv()
 
 # ============================
@@ -992,6 +994,12 @@ load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "placeholder-key")
 
+WEBHOOK_EVENTS = [
+    "resume.analyzed",
+    "profile.updated",
+    "user.created",
+    "chat.interaction"
+]
 # ============================
 # Data Models
 # ============================
@@ -1625,7 +1633,16 @@ class PersonalizationEngine:
         
         # Save to database
         self.shared_db.save_user_profile(username, profile.dict())
-        
+        dispatcher = WebhookDispatcher(self.shared_db)
+        try:
+            loop = asyncio.get_event_loop()
+            loop.create_task(dispatcher.fire("profile.updated", {
+                "username": username,
+                "personality_traits": profile.personality_traits,
+                "communication_style": profile.communication_style
+            }))
+        except RuntimeError:
+            pass
         return profile
     
     def update_user_data(self, username: str) -> Dict[str, Any]:
@@ -1679,7 +1696,18 @@ class PersonalizationEngine:
         
         # Save to database
         self.shared_db.save_user_profile(username, profile.dict())
-        
+        dispatcher = WebhookDispatcher(self.shared_db)
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            loop.create_task(dispatcher.fire("profile.updated", {
+                "username": username,
+                "personality_traits": profile.personality_traits,
+                "communication_style": profile.communication_style
+            }))
+        except RuntimeError:
+            pass  # No running event loop, skip webhook
+
         return {
             "success": True,
             "message": "Profile updated successfully",
@@ -2071,6 +2099,30 @@ def run_server():
         reload=True,
         log_level="info"
     )
+class WebhookRegistration(BaseModel):
+    url: str
+    events: List[str]
+    secret: Optional[str] = None
 
+@app.post("/webhooks/register")
+async def register_webhook(payload: WebhookRegistration):
+    invalid = [e for e in payload.events if e not in WEBHOOK_EVENTS]
+    if invalid:
+        raise HTTPException(400, f"Unknown events: {invalid}")
+    webhook = engine.shared_db.register_webhook(
+        url=str(payload.url),
+        events=payload.events,
+        secret=payload.secret
+    )
+    return {"webhook_id": webhook["id"], "message": "Registered successfully"}
+
+@app.delete("/webhooks/{webhook_id}")
+async def deregister_webhook(webhook_id: str):
+    engine.shared_db.deregister_webhook(webhook_id)
+    return {"message": "Webhook removed"}
+
+@app.get("/webhooks/events")
+async def list_events():
+    return {"available_events": WEBHOOK_EVENTS}
 if __name__ == "__main__":
     run_server()
