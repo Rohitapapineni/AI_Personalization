@@ -439,6 +439,8 @@ from pydantic import BaseModel, Field, validator
 # Import shared database
 from shared_database import SharedDatabase
 
+from webhook_dispatcher import WebhookDispatcher
+
 # Load environment variables
 load_dotenv()
 
@@ -1390,7 +1392,15 @@ async def analyze_resume(
                 "validation_confidence": validation_result.confidence
             }
         )
-        
+        dispatcher = WebhookDispatcher(shared_db)
+        await dispatcher.fire("resume.analyzed", {
+            "username": username,
+            "analysis_id": analysis_id,
+            "overall_score": analysis_result.get("ai_insights", {}).get("overall_score", 0),
+            "recommendation_level": analysis_result.get("ai_insights", {}).get("recommendation_level", "Unknown"),
+            "target_role": target_role or "general position"
+        })
+
         analysis_result["analysis_id"] = analysis_id
         analysis_result["saved_to_database"] = True
         
