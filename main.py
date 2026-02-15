@@ -1154,6 +1154,8 @@ from langchain_core.exceptions import OutputParserException
 
 from dotenv import load_dotenv
 
+from webhook_dispatcher import WebhookDispatcher
+
 # Import shared database
 from shared_database import SharedDatabase
 
@@ -2094,7 +2096,16 @@ Return ONLY the JSON array, no additional text."""
             
             # Save AI response
             self.memory_manager.add_message(chat_id, username, 'ai', response, False)
-            
+            import asyncio
+            dispatcher = WebhookDispatcher(self.db)
+            message_count = len(self.memory_manager.get_messages(chat_id))
+            asyncio.create_task(dispatcher.fire("chat.interaction", {
+                "username": username,
+                "chat_id": chat_id,
+                "message_count": message_count,
+                "topics": ["resume"]
+        }))
+
             return {
                 "response": response,
                 "is_recommendation": False,
@@ -2158,7 +2169,14 @@ Return ONLY the JSON array, no additional text."""
             
             # Save AI response to memory and database
             self.memory_manager.add_message(chat_id, username, 'ai', response, should_recommend)
-            
+            dispatcher = WebhookDispatcher(self.db)
+            message_count = len(self.memory_manager.get_messages(chat_id))
+            asyncio.create_task(dispatcher.fire("chat.interaction", {
+                "username": username,
+                "chat_id": chat_id,
+                "message_count": message_count,
+                "topics": ["college_recommendation"] if should_recommend else []
+            }))
             # Trigger profile update occasionally (every 10 messages)
             if len(self.memory_manager.get_memory_context(chat_id)) % 10 == 0:
                 self.personalization.trigger_profile_update(username)
