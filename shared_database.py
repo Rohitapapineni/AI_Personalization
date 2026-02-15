@@ -11,6 +11,38 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+import hmac
+import hashlib
+
+WEBHOOK_EVENTS = [
+    "resume.analyzed",
+    "profile.updated", 
+    "user.created",
+    "chat.interaction"
+]
+
+def register_webhook(self, url: str, events: list, secret: str = None):
+    webhooks = self._load_json("webhooks.json", default=[])
+    webhook = {
+        "id": str(uuid.uuid4()),
+        "url": url,
+        "events": events,
+        "secret": secret,
+        "created_at": datetime.now().isoformat(),
+        "active": True
+    }
+    webhooks.append(webhook)
+    self._save_json("webhooks.json", webhooks)
+    return webhook
+
+def get_webhooks_for_event(self, event: str):
+    webhooks = self._load_json("webhooks.json", default=[])
+    return [w for w in webhooks if event in w["events"] and w["active"]]
+
+def deregister_webhook(self, webhook_id: str):
+    webhooks = self._load_json("webhooks.json", default=[])
+    webhooks = [w for w in webhooks if w["id"] != webhook_id]
+    self._save_json("webhooks.json", webhooks)
 
 class SharedDatabase:
     """
